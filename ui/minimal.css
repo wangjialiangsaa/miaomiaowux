@@ -1,0 +1,7 @@
+/* BEGIN MMWX MINIMAL UI */
+/* Hide the release badge and promotional welcome overlay only. */
+.license-nameplate,
+.mmwx-welcome-mask {
+  display: none !important;
+}
+/* END MMWX MINIMAL UI */
