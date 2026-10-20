@@ -71,13 +71,19 @@ before(async () => {
     received.push({ url: request.url, method: request.method, body: body ? JSON.parse(body) : null });
     response.setHeader('set-cookie', 'nodectl_token=must-not-leak');
     if (request.url === '/api/get-nodes') return json(response, 200, { status: 'success', data: { direct_nodes: nodes.filter(node => node.routing_type !== 2), land_nodes: nodes.filter(node => node.routing_type === 2) } });
+    if (request.url?.startsWith('/api/traffic/consumption-rank?')) return json(response, 200, { status: 'success', rank: { generated_at: new URL(request.url, publicOrigin).searchParams.get('date'), items: [{ uuid: 'server-one', name: 'Example server', region: 'JP', offline: false, traffic_up: 100, traffic_down: 200, total_bytes: 300, tunnel_token: 'synthetic-private-tunnel-token' }] } });
     if (request.url === '/api/update-node') nodes = nodes.map(current => current.uuid === JSON.parse(body).uuid ? { ...JSON.parse(body), remark: current.remark } : current);
     return json(response, 200, { status: 'success', message: 'done' });
   });
   nodectl.on('upgrade', (request, socket, head) => {
     upgradedSockets.add(socket);
     socket.on('close', () => upgradedSockets.delete(socket));
-    assert.equal(request.headers.cookie, undefined);
+    if (request.url === '/api/traffic/live') {
+      const signed = request.headers.cookie?.replace('nodectl_token=', '');
+      assert.ok(signed);
+      const [header, claims, signature] = signed.split('.');
+      assert.equal(signature, createHmac('sha256', secret).update(`${header}.${claims}`).digest('base64url'));
+    } else assert.equal(request.headers.cookie, undefined);
     assert.equal(request.headers['mm-authorization'], undefined);
     socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSet-Cookie: must-not-leak\r\n\r\n');
     if (head.length) socket.write('echo:' + head.toString());
@@ -97,6 +103,39 @@ after(async () => {
 });
 const headers = extra => ({ cookie: adminCookie, ...extra });
 const mutationHeaders = () => headers({ origin: publicOrigin, 'x-mmwx-nodectl': '1', 'content-type': 'application/json' });
+
+test('expose validated read-only daily traffic without upstream secrets', async () => {
+  const response = await fetch(base + '/_nodectl/api/traffic?date=2026-10-20', { headers: headers() });
+  assert.equal(response.status, 200);
+  const payload = await response.text();
+  assert.doesNotMatch(payload, /tunnel_token|synthetic-private|nodectl_token/);
+  const { rank } = JSON.parse(payload);
+  assert.equal(rank.generated_at, '2026-10-20');
+  assert.equal(rank.items[0].traffic_up, 100);
+  assert.equal(rank.items[0].traffic_down, 200);
+  for (const date of ['', '2026-02-30', '2026-13-01', '../secret']) {
+    assert.equal((await fetch(base + '/_nodectl/api/traffic?date=' + encodeURIComponent(date), { headers: headers() })).status, 400);
+  }
+  assert.equal((await fetch(base + '/_nodectl/api/traffic?date=2026-10-20')).status, 401);
+});
+
+test('traffic WebSocket requires an administrator and exact same origin', { timeout: 5000 }, async () => {
+  const address = new URL(base);
+  async function upgrade(cookie, origin) {
+    return new Promise((resolve, reject) => {
+      const socket = connect({ host: address.hostname, port: address.port }, () => socket.write(`GET /_nodectl/api/traffic/live HTTP/1.1\r\nHost: panel.example.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n${cookie ? `Cookie: ${cookie}\r\n` : ''}${origin ? `Origin: ${origin}\r\n` : ''}\r\n`));
+      socket.setTimeout(2000, () => { socket.destroy(); reject(new Error('Traffic upgrade timed out')); });
+      socket.on('error', reject);
+      socket.once('data', chunk => { resolve(chunk.toString()); socket.destroy(); });
+    });
+  }
+  assert.match(await upgrade(adminCookie, publicOrigin), /101 Switching Protocols/);
+  assert.doesNotMatch(await upgrade(adminCookie, publicOrigin), /must-not-leak|set-cookie|nodectl_token/i);
+  assert.match(await upgrade('', publicOrigin), /401/);
+  assert.match(await upgrade('traffic_info_access_token="test-user-session"', publicOrigin), /403/);
+  assert.match(await upgrade(adminCookie, 'https://other.example.test'), /403/);
+  assert.match(await upgrade(adminCookie, ''), /403/);
+});
 
 test('parse native JSON cookies; reject ambiguous, malformed and unquoted values', () => {
   assert.equal(parseSessionCookie(adminCookie), 'test-admin-session');

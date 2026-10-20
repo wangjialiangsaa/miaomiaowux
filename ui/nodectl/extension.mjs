@@ -1,7 +1,8 @@
 import { importMissingNodes } from './native-import.mjs';
+import { createTrafficPanel, DISPLAY_INTERVAL_MS, trafficSnapshot } from './traffic.mjs';
 
 const prefix = '/_nodectl';
-const state = { authenticated: false, root: null, main: null, entries: new Map(), nodes: [], loading: false, cookie: null, checking: false };
+const state = { authenticated: false, root: null, main: null, entries: new Map(), nodes: [], loading: false, cookie: null, checking: false, traffic: null, nodeMarkup: null };
 
 function element(tag, attributes = {}, text) {
   const result = document.createElement(tag);
@@ -34,6 +35,7 @@ function revoke() {
   for (const entry of state.entries.values()) entry.remove();
   state.entries.clear();
   closeWorkspace();
+  state.root = null; state.nodes = []; state.traffic = null; state.nodeMarkup = null;
 }
 
 async function api(path, options = {}) {
@@ -49,6 +51,7 @@ async function api(path, options = {}) {
 }
 
 function closeWorkspace() {
+  stopTraffic();
   state.main?.classList.remove('nodectl-workspace-active');
   state.root?.remove();
 }
@@ -108,11 +111,68 @@ function edit(node) {
   });
 }
 
-function formatBytes(value) {
-  const bytes = Number(value || 0);
-  if (bytes < 1024) return `${bytes} B`;
-  const exponent = Math.min(4, Math.floor(Math.log(bytes) / Math.log(1024)));
-  return `${(bytes / 1024 ** exponent).toFixed(1)} ${['B', 'KiB', 'MiB', 'GiB', 'TiB'][exponent]}`;
+function renderTraffic() {
+  const traffic = state.traffic;
+  if (!traffic || !state.root?.isConnected) return;
+  traffic.panel.update(trafficSnapshot(state.nodes, traffic.samples, traffic.date ? traffic.rank || { items: [] } : null), { date: traffic.date, loading: traffic.loading, error: traffic.error, connected: traffic.socket?.readyState === WebSocket.OPEN });
+}
+
+async function loadTrafficDate(date) {
+  const traffic = state.traffic;
+  if (!traffic) return;
+  const changed = traffic.date !== date;
+  traffic.request?.abort(); traffic.date = date; traffic.error = false;
+  if (changed) traffic.rank = null;
+  if (!date) { traffic.rank = null; traffic.loading = false; renderTraffic(); return; }
+  const controller = new AbortController(); traffic.request = controller;
+  traffic.loading = !traffic.rank; renderTraffic();
+  try {
+    const result = await api('/traffic?' + new URLSearchParams({ date }), { signal: controller.signal });
+    if (state.traffic === traffic && !controller.signal.aborted) traffic.rank = result.rank;
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    traffic.rank = null; traffic.error = true; notice(error.message, true);
+  } finally {
+    if (state.traffic === traffic && !controller.signal.aborted) { traffic.loading = false; traffic.request = null; renderTraffic(); }
+  }
+}
+
+function connectTraffic() {
+  const traffic = state.traffic;
+  if (!traffic?.timer || traffic.socket || !state.authenticated || !state.root?.isConnected || document.visibilityState === 'hidden') return;
+  const url = new URL(`${prefix}/api/traffic/live`, location.origin); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = new WebSocket(url); traffic.socket = socket;
+  socket.onopen = () => { traffic.retry = 1000; renderTraffic(); };
+  socket.onmessage = event => {
+    try {
+      const sample = JSON.parse(event.data);
+      if (sample && state.nodes.some(node => node.uuid === sample.node_uuid)) traffic.samples.set(sample.node_uuid, { ...sample, receivedAt: Date.now() });
+    } catch { }
+  };
+  socket.onerror = () => socket.close();
+  socket.onclose = () => {
+    if (traffic.socket !== socket) return;
+    traffic.socket = null; renderTraffic();
+    if (!traffic.timer) return;
+    traffic.reconnect = setTimeout(async () => { await checkSession(); if (state.traffic === traffic) connectTraffic(); }, traffic.retry);
+    traffic.retry = Math.min(15000, traffic.retry * 2);
+  };
+}
+
+function startTraffic() {
+  const traffic = state.traffic;
+  if (!traffic || traffic.timer || document.visibilityState === 'hidden') return;
+  traffic.timer = setInterval(() => { if (!document.querySelector('dialog[open]')) renderTraffic(); }, DISPLAY_INTERVAL_MS);
+  connectTraffic();
+}
+
+function stopTraffic() {
+  const traffic = state.traffic;
+  if (!traffic) return;
+  clearInterval(traffic.timer); clearTimeout(traffic.reconnect); traffic.timer = null;
+  traffic.request?.abort(); traffic.request = null; traffic.loading = false;
+  const socket = traffic.socket; traffic.socket = null;
+  if (socket) { socket.onclose = null; socket.close(); }
 }
 
 async function protocol(node, name, action) {
@@ -123,6 +183,10 @@ async function protocol(node, name, action) {
 }
 
 function renderNodes() {
+  renderTraffic();
+  const signature = JSON.stringify(state.nodes.map(({ traffic_up, traffic_down, traffic_update_at, traffic_history_count, ...node }) => node));
+  if (signature === state.nodeMarkup) return;
+  state.nodeMarkup = signature;
   const grid = state.root.querySelector('[data-nodectl-nodes]'); grid.replaceChildren();
   state.root.querySelector('[data-nodectl-count]').textContent = `${state.nodes.length} 台服务器`;
   if (!state.nodes.length) grid.append(element('p', { className: 'nodectl-empty' }, '暂无 NodeCTL 服务器。添加后生成 Agent 安装命令；不会改动原妙妙屋X节点。'));
@@ -131,8 +195,7 @@ function renderNodes() {
     const heading = element('div', { className: 'nodectl-card-heading' });
     heading.append(element('h2', {}, node.name), element('span', { className: 'nodectl-badge' }, node.is_blocked ? '已屏蔽' : '可用'));
     card.append(heading, element('p', { className: 'nodectl-muted' }, [node.ipv4, node.ipv6].filter(Boolean).join(' · ') || '等待 Agent 上报地址'));
-    card.append(element('p', { className: 'nodectl-muted' }, `Agent ${node.agent_version || '尚未注册'} · 上传 ${formatBytes(node.traffic_up)} · 下载 ${formatBytes(node.traffic_down)}`));
-    if (node.traffic_update_at) card.append(element('p', { className: 'nodectl-muted' }, `最近上报：${node.traffic_update_at}`));
+    card.append(element('p', { className: 'nodectl-muted' }, `Agent ${node.agent_version || '尚未注册'}`));
     if (node.remark) card.append(element('p', {}, node.remark));
     const controls = element('div', { className: 'nodectl-actions' });
     controls.append(button('编辑', () => edit(node)), button('Agent 安装命令', async () => showText('Agent 安装命令', (await api(`/nodes/${encodeURIComponent(node.uuid)}/install`)).command)), button('删除', async () => {
@@ -156,7 +219,14 @@ function renderNodes() {
 async function refresh() {
   if (state.loading || !state.authenticated) return;
   state.loading = true;
-  try { state.nodes = (await api('/nodes')).nodes; if (state.root?.isConnected) renderNodes(); }
+  try {
+    state.nodes = (await api('/nodes')).nodes;
+    if (state.root?.isConnected) {
+      for (const uuid of state.traffic.samples.keys()) if (!state.nodes.some(node => node.uuid === uuid)) state.traffic.samples.delete(uuid);
+      renderNodes();
+      if (state.traffic.date && !state.traffic.request) await loadTrafficDate(state.traffic.date);
+    }
+  }
   finally { state.loading = false; }
 }
 
@@ -182,10 +252,16 @@ function mountWorkspace() {
     const actions = element('div', { className: 'nodectl-actions' });
     actions.append(button('返回原页面', () => { history.replaceState(null, '', location.pathname + location.search); closeWorkspace(); }), button('刷新', refresh), button('导出节点链接', async () => showText('已启用节点链接', (await api('/export')).entries.map(entry => entry.url).join('\n'))), button('导入到妙妙屋X', importNodes), button('添加服务器', () => edit(), 'nodectl-primary'));
     header.append(title, actions);
-    state.root.append(header, element('p', { 'data-nodectl-notice': '', role: 'status', 'aria-live': 'polite', className: 'nodectl-notice' }, '沿用妙妙屋X管理员登录；原有节点和订阅保持独立，不自动覆盖。'), element('div', { 'data-nodectl-nodes': '', className: 'nodectl-grid' }));
+    const panel = createTrafficPanel(loadTrafficDate);
+    state.traffic = { panel, samples: new Map(), date: null, rank: null, loading: false, error: false, request: null, timer: null, reconnect: null, socket: null, retry: 1000 };
+    const layout = element('div', { className: 'nodectl-dashboard' });
+    const management = element('section', { className: 'nodectl-management', 'aria-label': '服务器管理' });
+    management.append(element('h2', { className: 'nodectl-management-title' }, '服务器管理'), element('div', { 'data-nodectl-nodes': '', className: 'nodectl-grid' }));
+    layout.append(panel.root, management);
+    state.root.append(header, element('p', { 'data-nodectl-notice': '', role: 'status', 'aria-live': 'polite', className: 'nodectl-notice' }, '沿用妙妙屋X管理员登录；原有节点和订阅保持独立，不自动覆盖。'), layout);
     renderNodes();
   }
-  if (!state.root.isConnected) { main.append(state.root); refresh().catch(error => notice(error.message, true)); }
+  if (!state.root.isConnected) { main.append(state.root); startTraffic(); refresh().catch(error => notice(error.message, true)); }
 }
 
 function mountEntry() {
@@ -229,6 +305,10 @@ document.addEventListener('click', event => {
 });
 window.addEventListener('hashchange', mountWorkspace);
 window.addEventListener('popstate', mountWorkspace);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') stopTraffic();
+  else if (state.root?.isConnected) { startTraffic(); refresh().catch(error => notice(error.message, true)); }
+});
 new MutationObserver(mountEntry).observe(document.body, { childList: true, subtree: true });
 setInterval(() => { if (document.cookie !== state.cookie) checkSession(); }, 1000);
 setInterval(() => { if (state.root?.isConnected && document.visibilityState !== 'hidden' && !document.querySelector('dialog[open]')) refresh().catch(error => notice(error.message, true)); }, 15000);

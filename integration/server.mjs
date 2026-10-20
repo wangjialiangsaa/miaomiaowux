@@ -3,12 +3,12 @@ import { createServer, request as requestHttp } from 'node:http';
 import { request as requestHttps } from 'node:https';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { authenticate, checkMutation } from './auth.mjs';
-import { NodeCtlClient, exportEntries, validateChanges } from './nodectl.mjs';
+import { NodeCtlClient, exportEntries, signNodeCtlToken, validateChanges } from './nodectl.mjs';
 import { HttpError, requestJson, upstreamUrl } from './upstream.mjs';
 
 const prefix = '/_nodectl';
 const publicAgentPaths = new Set(['/api/public/new-install-script', '/api/public/download/agent', '/api/agent/init-config', '/api/callback/traffic/ws']);
-const assets = new Map(['extension.mjs', 'native-import.mjs', 'style.css'].map(name => [name, {
+const assets = new Map(['extension.mjs', 'native-import.mjs', 'traffic.mjs', 'style.css'].map(name => [name, {
   body: readFileSync(new URL(`../ui/nodectl/${name}`, import.meta.url)), type: name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
 }]));
 const injection = '<link rel="stylesheet" href="/_nodectl/assets/style.css"><script type="module" data-mmwx-nodectl src="/_nodectl/assets/extension.mjs"></script>';
@@ -90,18 +90,24 @@ function proxy(request, response, config, agent = false) {
   request.pipe(upstream);
 }
 
-function proxyUpgrade(request, socket, head, config, agent) {
-  const target = new URL(request.url, agent ? config.nodectlUrl : config.mmwxUrl);
-  if (target.origin !== (agent ? config.nodectlUrl : config.mmwxUrl)) return socket.destroy();
+function proxyUpgrade(request, socket, head, config, agent, managementToken) {
+  const nodeCtl = agent || Boolean(managementToken);
+  const target = new URL(managementToken ? '/api/traffic/live' : request.url, nodeCtl ? config.nodectlUrl : config.mmwxUrl);
+  if (target.origin !== (nodeCtl ? config.nodectlUrl : config.mmwxUrl)) return socket.destroy();
   const headers = cleanHeaders(request.headers);
   headers.connection = 'Upgrade'; headers.upgrade = 'websocket';
   headers.host = new URL(config.publicOrigin).host;
   headers['x-forwarded-proto'] = new URL(config.publicOrigin).protocol.slice(0, -1);
-  if (agent) { delete headers.cookie; delete headers['mm-authorization']; }
+  if (nodeCtl) { delete headers.cookie; delete headers['mm-authorization']; }
+  if (managementToken) {
+    headers.cookie = `nodectl_token=${managementToken}`;
+    const expiry = setTimeout(() => socket.destroy(), 55000);
+    expiry.unref(); socket.once('close', () => clearTimeout(expiry));
+  }
   const upstream = (target.protocol === 'https:' ? requestHttps : requestHttp)(target, { headers });
   upstream.on('upgrade', (response, remote, remoteHead) => {
     remote.setTimeout(0);
-    const responseHeaders = Object.entries(response.headers).filter(([name]) => !agent || name !== 'set-cookie').flatMap(([name, value]) => Array.isArray(value) ? value.map(entry => `${name}: ${entry}`) : [`${name}: ${value}`]);
+    const responseHeaders = Object.entries(response.headers).filter(([name]) => !nodeCtl || name !== 'set-cookie').flatMap(([name, value]) => Array.isArray(value) ? value.map(entry => `${name}: ${entry}`) : [`${name}: ${value}`]);
     socket.write(`HTTP/1.1 101 Switching Protocols\r\n${responseHeaders.join('\r\n')}\r\n\r\n`);
     if (head.length) remote.write(head);
     if (remoteHead.length) socket.write(remoteHead);
@@ -139,6 +145,7 @@ export function createGateway(options) {
       if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)) throw new HttpError(405, '不支持的管理方法');
       if (request.method !== 'GET') checkMutation(request, config);
       if (path === `${prefix}/api/session` && request.method === 'GET') return sendJson(response, 200, { username: session.username, role: session.role });
+      if (path === `${prefix}/api/traffic` && request.method === 'GET') return sendJson(response, 200, await client.traffic(new URL(request.url, config.publicOrigin).searchParams.get('date')));
       if (path === `${prefix}/api/mmwx-nodes` && request.method === 'GET') {
         const result = await requestJson(config.mmwxUrl, '/api/admin/nodes', { headers: { 'MM-Authorization': session.token }, timeoutMs: config.timeoutMs });
         if (result.status !== 200 || !Array.isArray(result.data?.nodes)) throw new HttpError(502, '妙妙屋X节点接口不兼容');
@@ -171,9 +178,19 @@ export function createGateway(options) {
   server.requestTimeout = 30000;
   server.headersTimeout = 15000;
   server.maxHeadersCount = 100;
-  server.on('upgrade', (request, socket, head) => {
+  server.on('upgrade', async (request, socket, head) => {
     if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('\\')) return socket.destroy();
     const path = new URL(request.url, config.publicOrigin).pathname;
+    if (path === `${prefix}/api/traffic/live`) {
+      try {
+        if (request.headers.origin !== config.publicOrigin) throw new HttpError(403, '无效的实时连接来源');
+        await authenticate(request, config);
+        if (!socket.destroyed) proxyUpgrade(request, socket, head, config, false, signNodeCtlToken(client.credentials()));
+      } catch (error) {
+        socket.end(`HTTP/1.1 ${error instanceof HttpError ? error.status : 503} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+      }
+      return;
+    }
     if (path === prefix || path.startsWith(prefix + '/')) return socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
     proxyUpgrade(request, socket, head, config, path === '/api/callback/traffic/ws');
   });

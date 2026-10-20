@@ -52,6 +52,15 @@ export class NodeCtlClient {
     return node;
   }
 
+  async traffic(date) {
+    const parsed = new Date(date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) throw new HttpError(400, '请选择有效的统计日期');
+    const result = await this.request('/api/traffic/consumption-rank?' + new URLSearchParams({ date, limit: '500' }));
+    if (!Array.isArray(result.rank?.items)) throw new HttpError(502, 'NodeCTL历史流量接口不兼容');
+    const fields = ['uuid', 'name', 'region', 'offline', 'traffic_up', 'traffic_down', 'traffic_update_at'];
+    return { rank: { generated_at: date, items: result.rank.items.map(item => Object.fromEntries(fields.filter(field => Object.hasOwn(item, field)).map(field => [field, item[field]]))) } };
+  }
+
   async update(uuid, changes) {
     validateChanges(changes);
     const current = await this.node(uuid);
