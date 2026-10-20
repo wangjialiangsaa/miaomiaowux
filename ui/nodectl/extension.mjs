@@ -1,7 +1,7 @@
 import { importMissingNodes } from './native-import.mjs';
 
 const prefix = '/_nodectl';
-const state = { authenticated: false, root: null, main: null, entry: null, nodes: [], loading: false, cookie: null, checking: false };
+const state = { authenticated: false, root: null, main: null, entries: new Map(), nodes: [], loading: false, cookie: null, checking: false };
 
 function element(tag, attributes = {}, text) {
   const result = document.createElement(tag);
@@ -31,7 +31,8 @@ function notice(message, error = false) {
 
 function revoke() {
   state.authenticated = false;
-  state.entry?.remove(); state.entry = null;
+  for (const entry of state.entries.values()) entry.remove();
+  state.entries.clear();
   closeWorkspace();
 }
 
@@ -189,18 +190,25 @@ function mountWorkspace() {
 
 function mountEntry() {
   if (!state.authenticated) return;
-  const menu = document.querySelector('[data-sidebar="menu"], aside nav ul, nav[data-sidebar] ul');
-  if (!menu) return;
-  if (!state.entry?.isConnected) {
-    const template = menu.querySelector('a');
-    const entry = element('li', { 'data-sidebar': 'menu-item' });
-    const link = element('a', { href: '#nodectl', 'data-sidebar': 'menu-button', 'data-nodectl-entry': '', className: template?.className || 'nodectl-nav-link' });
-    const icon = element('span', { 'aria-hidden': 'true' }, '▤');
-    link.append(icon, element('span', {}, 'NodeCTL 服务器'));
-    link.addEventListener('click', event => { event.preventDefault(); history.pushState(null, '', location.pathname + location.search + '#nodectl'); mountWorkspace(); });
-    entry.append(link); menu.append(entry); state.entry = entry;
-  }
   mountWorkspace();
+  const menu = document.querySelector('[data-sidebar="menu"], aside nav ul, nav[data-sidebar] ul');
+  const containers = menu ? [menu] : [...document.querySelectorAll('nav')].filter(navigation => !navigation.closest('main, [role="main"], footer') && navigation.querySelector('a, button'));
+  for (const [container, entry] of state.entries) {
+    if (!containers.includes(container) || !entry.isConnected) { entry.remove(); state.entries.delete(container); }
+  }
+  for (const container of containers) {
+    if (state.entries.has(container)) continue;
+    const sidebar = container === menu;
+    const template = container.querySelector('a, button');
+    const entry = sidebar ? element('li', { 'data-sidebar': 'menu-item' }) : null;
+    const link = element('a', { href: '#nodectl', 'data-nodectl-entry': '', 'aria-label': 'NodeCTL 服务器', title: 'NodeCTL 服务器', className: `${template?.className || 'nodectl-nav-link'}${sidebar ? '' : ' nodectl-top-nav-link'}` });
+    if (sidebar) link.setAttribute('data-sidebar', 'menu-button');
+    const icon = element('span', { 'aria-hidden': 'true' }, '▤');
+    link.append(icon, element('span', { className: 'nodectl-nav-label' }, 'NodeCTL 服务器'));
+    link.addEventListener('click', event => { event.preventDefault(); history.pushState(null, '', location.pathname + location.search + '#nodectl'); mountWorkspace(); });
+    if (entry) entry.append(link);
+    container.append(entry || link); state.entries.set(container, entry || link);
+  }
 }
 
 async function checkSession() {

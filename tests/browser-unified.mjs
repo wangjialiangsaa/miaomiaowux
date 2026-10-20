@@ -58,14 +58,38 @@ try {
   await page.screenshot({ path: '.artifacts/unified-mobile.png', fullPage: true });
   await page.getByRole('link', { name: '原节点管理', exact: true }).click();
   await page.getByRole('heading', { name: '原节点页面' }).waitFor();
-  await page.locator('[data-nodectl-entry]').waitFor();
-  await page.locator('[data-nodectl-entry]').click();
+  await page.setViewportSize({ width: 1360, height: 900 });
+  await page.evaluate(() => {
+    const header = document.createElement('header');
+    for (const layout of ['desktop', 'mobile']) {
+      const navigation = document.createElement('nav');
+      navigation.dataset.fixtureNavigation = layout;
+      const link = document.createElement('a');
+      link.href = '#native'; link.textContent = '原生功能'; navigation.append(link); header.append(navigation);
+    }
+    header.append(document.querySelector('#fixture-logout'));
+    document.querySelector('aside').replaceWith(header);
+    document.body.style.display = 'block';
+    const style = document.createElement('style');
+    style.textContent = 'header nav{display:flex;gap:8px}header nav[data-fixture-navigation="mobile"]{display:none}@media(max-width:640px){header nav[data-fixture-navigation="desktop"]{display:none}header nav[data-fixture-navigation="mobile"]{display:flex}}';
+    document.head.append(style);
+  });
+  const desktopEntry = page.locator('nav[data-fixture-navigation="desktop"] [data-nodectl-entry]');
+  await desktopEntry.waitFor({ state: 'visible', timeout: 5000 });
+  await desktopEntry.click();
   await page.getByRole('heading', { name: 'NodeCTL 统一管理' }).waitFor();
+  await page.getByRole('button', { name: '返回原页面', exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileEntry = page.locator('nav[data-fixture-navigation="mobile"] [data-nodectl-entry]');
+  await mobileEntry.waitFor({ state: 'visible', timeout: 5000 });
+  await mobileEntry.click();
+  await page.getByRole('heading', { name: 'NodeCTL 统一管理' }).waitFor();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[data-nodectl-entry]'));
   assert.equal((await page.request.get(fixtures.base + '/_nodectl/api/nodes')).status(), 401);
   assert.equal(fixtures.state.logins, 1);
   assert.equal(fixtures.state.nodectlLogins, 0);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, checks: ['single-login', 'native-sidebar', 'same-main-content', 'xss-safe-text', 'metadata-preservation', 'protocol-control', 'agent-install-command', 'additive-import', 'deduplication', 'create-delete', 'no-upstream-token-leak', 'desktop-mobile-layout', 'native-navigation', 'logout-revocation'], productionModified: false }));
+  console.log(JSON.stringify({ passed: true, checks: ['single-login', 'native-sidebar', 'same-main-content', 'xss-safe-text', 'metadata-preservation', 'protocol-control', 'agent-install-command', 'additive-import', 'deduplication', 'create-delete', 'no-upstream-token-leak', 'desktop-mobile-layout', 'native-navigation', 'native-top-navigation', 'mobile-navigation-entry', 'logout-revocation'], productionModified: false }));
 } finally { await browser.close(); await fixtures.close(); }

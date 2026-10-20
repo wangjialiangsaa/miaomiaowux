@@ -33,4 +33,6 @@ main.nodectl-workspace-active > :not(#mmwx-nodectl-root), [role="main"].nodectl-
 .nodectl-form input, .nodectl-form select, .nodectl-dialog textarea { display: block; width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--border, #d9dee5); border-radius: 6px; background: var(--background, #fff); color: inherit; font: inherit; }
 .nodectl-dialog textarea { resize: vertical; margin-bottom: 10px; }
 .nodectl-nav-link { display: flex; align-items: center; gap: 8px; padding: 8px; font-size: .9rem; }
+.nodectl-top-nav-link { flex-shrink: 0; text-decoration: none; }
+@media (max-width: 767px) { .nodectl-top-nav-link .nodectl-nav-label { display: none; } }
 @media (max-width: 640px) { #mmwx-nodectl-root { padding: 16px; } .nodectl-header > .nodectl-actions { width: 100%; } .nodectl-grid { grid-template-columns: 1fr; } }
