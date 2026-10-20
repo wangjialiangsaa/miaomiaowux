@@ -1,3 +1,12 @@
 runtime/
 __pycache__/
 *.pyc
+.artifacts/
+node_modules/
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite*
+core
+core.*

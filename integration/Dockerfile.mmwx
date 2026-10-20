@@ -1,0 +1,25 @@
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS download
+ARG TARGETARCH
+RUN apk add --no-cache ca-certificates curl
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) digest=b0cb28538c15b3d33663ac1413e731dbf6cb7d8e9fb8b8dc0f808f0af87430f2 ;; \
+      arm64) digest=13aab406cf3525b6be146c9155429c9bcfa3961b09d7a2158f1b81be93025ff1 ;; \
+      *) echo 'Unsupported architecture' >&2; exit 1 ;; \
+    esac; \
+    curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+      "https://github.com/zako-li/miaomiaowux/releases/download/mmwx-v0.5.4/mmwx-linux-$TARGETARCH" \
+      -o /mmwx; \
+    printf '%s  /mmwx\n' "$digest" | sha256sum -c -; \
+    test "$(od -An -tx1 -N4 /mmwx | tr -d ' \n')" = 7f454c46; \
+    chmod 0555 /mmwx
+
+FROM alpine:3.22
+RUN addgroup -S -g 10001 mmwx && adduser -S -u 10001 -G mmwx -H mmwx && mkdir /data && chown 10001:10001 /data
+COPY --from=download /mmwx /usr/local/bin/mmwx
+COPY --from=download /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+ENV PORT=12889 MMWX_DATA_DIR=/data MMWX_UPDATE_REPO=off
+WORKDIR /data
+USER 10001:10001
+EXPOSE 12889
+ENTRYPOINT ["/usr/local/bin/mmwx"]

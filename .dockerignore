@@ -1,0 +1,13 @@
+.git
+.artifacts
+runtime
+node_modules
+.env
+.env.*
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/*.pem
+**/*.key
+core
+core.*

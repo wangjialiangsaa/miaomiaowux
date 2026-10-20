@@ -1,0 +1,46 @@
+name: mmwx-unified
+services:
+  mmwx:
+    build:
+      context: .
+      dockerfile: integration/Dockerfile.mmwx
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    volumes:
+      - mmwx-data:/data
+  nodectl:
+    image: ${NODECTL_IMAGE:-ghcr.io/hobin66/nodectl:latest}
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    volumes:
+      - nodectl-data:/app/data
+  gateway:
+    build:
+      context: .
+      dockerfile: integration/Dockerfile
+    restart: unless-stopped
+    user: "${GATEWAY_UID:-10001}:${GATEWAY_GID:-10001}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the public HTTPS origin}
+      MMWX_URL: http://mmwx:12889
+      NODECTL_URL: http://nodectl:8080
+      NODECTL_DB: /data/nodectl/nodectl.db
+    ports:
+      - "${GATEWAY_BIND:-127.0.0.1}:${GATEWAY_PORT:-12900}:12900"
+    volumes:
+      - nodectl-data:/data/nodectl:ro
+    depends_on: [mmwx, nodectl]
+volumes:
+  mmwx-data:
+  nodectl-data:

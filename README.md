@@ -4,7 +4,20 @@
 
 TG 频道：<https://t.me/fuck_miaomiaowux>
 
-> 本仓库维护安装与升级脚本，不包含面板 / Agent 业务源码。二进制默认取自 [上游 Releases](https://github.com/zako-li/miaomiaowux/releases)，不使用本仓库的空 Releases 页面。脚本修改不改变上游二进制内部行为。
+> 本仓库维护安装、升级脚本，以及可选的 NodeCTL 统一管理网关和界面扩展源码；不包含上游面板 / Agent 业务源码。二进制默认取自 [上游 Releases](https://github.com/zako-li/miaomiaowux/releases)，不使用本仓库的空 Releases 页面。整合层不修改上游二进制。
+
+## NodeCTL 统一后台（可选）
+
+在妙妙屋X原侧栏、原主内容区管理 NodeCTL 的服务器和 Agent，**只登录妙妙屋X一次**，无需再次输入 NodeCTL 密码，也不是 iframe 嵌入两个面板。
+
+- 支持已有服务器、基本信息编辑、Agent 安装命令及协议启用 / 停用 / 重置。
+- 可显式导入缺失节点到妙妙屋X，按原链接去重，不覆盖已有节点、账户或订阅链接。
+- 两个引擎和数据库保持独立，现有 Agent 无需重新安装。当前不是双向自动同步，也不提供 PostgreSQL 适配。
+- 提供新安装和挂接现有服务两种 Docker Compose；旧安装器不自动启用网关。
+
+配置、HTTPS 接入、测试与回退步骤见 [统一后台部署文档](docs/nodectl-unified.md)。原生导入接口当前按 `mmwx-v0.5.4` 验证；升级上游前请重新验证兼容性。
+
+---
 
 本版先校验 SHA-256 和 ELF 架构，再备份、停止服务、替换并检查启动状态；失败或收到 Ctrl+C / SIGTERM 时恢复旧程序与原运行状态。原来停止的服务升级后保持停止。成功升级保留一个 `.previous` 程序备份。数据库升级是否兼容仍由上游程序决定，程序回滚不能代替数据备份。
 
