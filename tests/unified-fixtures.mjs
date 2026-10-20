@@ -8,6 +8,7 @@ export async function startFixtures() {
   const state = { logins: 0, nodectlLogins: 0, protocols: [], imported: [], sessionValid: true, nodes: [{ uuid: 'fixture-server', install_id: 'fixture-install', name: '<img src=x onerror="window.fixtureXss=true">', routing_type: 1, agent_version: 'fixture', ipv4: '192.0.2.10', traffic_up: 1024, traffic_down: 2048, links: { vless_reality: 'vless://fixture@example.test:443#Fixture' }, disabled_links: [], tunnel_token: 'must-not-reach-browser', remark: '原有备注', traffic_limit: 123456, traffic_reset_mode: 'off', ip_mode: 1 }] };
   const json = (response, status, data) => { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(data)); };
   const liveSockets = new Set();
+  state.nodes[0].region = 'JP';
   state.liveConnections = 0; state.nodeReads = 0;
   state.sendTraffic = message => {
     const payload = Buffer.from(JSON.stringify(message));

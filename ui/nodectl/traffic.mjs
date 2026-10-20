@@ -17,6 +17,25 @@ export function regionFlag(region) {
   return /^[A-Z]{2}$/.test(code) ? String.fromCodePoint(...[...code].map(letter => 127397 + letter.charCodeAt(0))) : '';
 }
 
+const flagImages = new Map([
+  ['JP', '<rect width="32" height="22" fill="#fff"/><circle cx="16" cy="11" r="6" fill="#bc002d"/>'],
+  ['LV', '<rect width="32" height="22" fill="#9e1b35"/><path d="M0 9h32v4H0z" fill="#fff"/>'],
+  ['US', Array.from({ length: 13 }, (unused, index) => `<rect y="${index * 22 / 13}" width="32" height="${22 / 13}" fill="${index % 2 ? '#fff' : '#b22234'}"/>`).join('') + '<rect width="13" height="11.85" fill="#3c3b6e"/>' + Array.from({ length: 9 }, (unused, row) => Array.from({ length: row % 2 ? 5 : 6 }, (unused, column) => `<circle cx="${1.1 + column * 2.15 + (row % 2 ? 1.075 : 0)}" cy="${.7 + row * 1.3}" r=".36" fill="#fff"/>`).join('')).join('')],
+]);
+
+function updateFlag(target, region) {
+  const code = String(region || '').toUpperCase();
+  if (target.dataset.region === code) return;
+  target.dataset.region = code; target.replaceChildren(); target.hidden = !regionFlag(code);
+  target.title = code;
+  const image = flagImages.get(code);
+  if (image) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 32 22'); svg.setAttribute('width', '24'); svg.setAttribute('height', '17');
+    svg.innerHTML = image; target.append(svg);
+  } else target.textContent = regionFlag(code) ? code : '';
+}
+
 export function trafficSnapshot(nodes, samples = new Map(), rank = null, now = Date.now()) {
   const sources = rank ? rank.items || [] : nodes;
   const servers = new Map(nodes.map(node => [node.uuid, node]));
@@ -117,7 +136,7 @@ export function createTrafficPanel(onDateChange) {
         if (!row) { row = trafficRow(); rows.set(item.uuid, row); row.root.dataset.uuid = item.uuid; }
         if (list.children[index] !== row.root) list.insertBefore(row.root, list.children[index] || null);
         row.root.classList.toggle('nodectl-traffic-leading', index === 0 && item.total > 0);
-        text(row.flag, regionFlag(item.region)); row.flag.hidden = !regionFlag(item.region);
+        updateFlag(row.flag, item.region);
         text(row.label, item.name); text(row.total, formatTraffic(item.total));
         row.status.dataset.state = item.status;
         const statusLabel = { online: '在线', offline: '离线', pending: '等待上报', stale: '上报延迟' }[item.status];

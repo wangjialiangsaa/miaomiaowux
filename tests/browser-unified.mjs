@@ -22,6 +22,7 @@ try {
   assert.equal(await page.locator('iframe').count(), 0);
   await page.getByRole('heading', { name: '流量消耗', exact: true }).waitFor({ timeout: 3000 });
   assert.equal(await page.locator('[data-traffic-row]').count(), 1);
+  assert.equal(await page.locator('.nodectl-traffic-flag svg').count(), 1);
   assert.match(await page.locator('[data-traffic-summary="total"]').textContent(), /3.*KiB/);
   await page.getByText(/当前累计用量.*实时连接已建立/).waitFor();
   const reads = fixtures.state.nodeReads;
@@ -118,5 +119,5 @@ try {
   assert.equal(fixtures.state.logins, 1);
   assert.equal(fixtures.state.nodectlLogins, 0);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, checks: ['single-login', 'native-sidebar', 'same-main-content', 'xss-safe-text', 'metadata-preservation', 'protocol-control', 'agent-install-command', 'additive-import', 'deduplication', 'create-delete', 'no-upstream-token-leak', 'desktop-mobile-layout', 'native-navigation', 'native-top-navigation', 'mobile-navigation-entry', 'logout-revocation', 'traffic-summary', 'half-second-live-display', 'correct-rate-directions', 'stable-traffic-rows', 'no-half-second-upstream-polling', 'real-daily-history', 'hidden-page-pauses-live-connection', 'logout-closes-live-connection'], productionModified: false }));
+  console.log(JSON.stringify({ passed: true, checks: ['single-login', 'native-sidebar', 'same-main-content', 'xss-safe-text', 'metadata-preservation', 'protocol-control', 'agent-install-command', 'additive-import', 'deduplication', 'create-delete', 'no-upstream-token-leak', 'desktop-mobile-layout', 'native-navigation', 'native-top-navigation', 'mobile-navigation-entry', 'logout-revocation', 'traffic-summary', 'half-second-live-display', 'correct-rate-directions', 'stable-traffic-rows', 'no-half-second-upstream-polling', 'real-daily-history', 'hidden-page-pauses-live-connection', 'logout-closes-live-connection', 'local-svg-region-flags'], productionModified: false }));
 } finally { await browser.close(); await fixtures.close(); }

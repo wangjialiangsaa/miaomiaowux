@@ -65,6 +65,7 @@ main.nodectl-workspace-active > :not(#mmwx-nodectl-root), [role="main"].nodectl-
 .nodectl-traffic-server { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .nodectl-traffic-server > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; font-weight: 650; }
 .nodectl-traffic-flag { flex-shrink: 0; font-size: 1.12rem; line-height: 1; }
+.nodectl-traffic-flag svg { display: block; border: 1px solid rgb(90 100 120 / .12); border-radius: 2px; }
 .nodectl-traffic-dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #b4bac4; }
 .nodectl-traffic-dot[data-state="online"] { background: #36bb5d; }
 .nodectl-traffic-dot[data-state="offline"] { background: #df6262; }
