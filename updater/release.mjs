@@ -49,7 +49,7 @@ async function openDownload(address, options = {}) {
   const signal = options.signal || AbortSignal.timeout(options.timeoutMs || 20000);
   for (let redirects = 0; redirects <= 5; redirects++) {
     if (target.protocol !== 'https:' || target.port || target.username || target.password || !downloadHosts.has(target.hostname)) throw new UpdateError(422, '下载地址不在受信任的 HTTPS 发布源中');
-    const response = await (options.fetch || fetch)(target.href, { redirect: 'manual', signal, headers: { accept: 'application/octet-stream', 'user-agent': 'mmwx-gateway-updater/1' } });
+    const response = await (options.fetch || fetch)(target.href, { redirect: 'manual', signal, headers: { accept: target.hostname === 'api.github.com' ? 'application/vnd.github+json' : 'application/octet-stream', 'user-agent': 'mmwx-gateway-updater/1' } });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       await response.body?.cancel();
       const location = response.headers.get('location');

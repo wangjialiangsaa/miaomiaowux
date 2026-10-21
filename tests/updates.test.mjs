@@ -108,6 +108,12 @@ test('downloads reject non-HTTPS, untrusted redirects, timeouts and oversized bo
   await assert.rejects(fetchBounded('https://github.com/file', 100, { fetch: async () => new Response('', { status: 302, headers: { location: 'https://attacker.example/file' } }) }), /下载/);
 });
 
+test('GitHub release discovery requests JSON while binary assets request octet-stream', async () => {
+  for (const [address, accept] of [['https://api.github.com/repos/wangjialiangsaa/miaomiaowux/releases?per_page=100', 'application/vnd.github+json'], ['https://github.com/wangjialiangsaa/miaomiaowux/releases/download/gateway-v1.0.0/manifest.sig', 'application/octet-stream']]) {
+    await fetchBounded(address, 100, { fetch: async (url, options) => { assert.equal(options.headers.accept, accept); return new Response('fixture'); } });
+  }
+});
+
 test('successful update verifies, backs up, deploys only the gateway and persists private status', async context => {
   const setup = fixture(context);
   const manager = await createUpdateManager({ source: setup.source, runner: setup.runner, stateDirectory: setup.directory });
