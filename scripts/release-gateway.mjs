@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { compareVersions, repository, verifyManifest } from '../updater/release.mjs';
+import { archiveConfigDigest } from '../updater/image.mjs';
 
 export function buildManifest({ version, revision, images }) {
   compareVersions(version, version);
@@ -42,8 +43,8 @@ async function main() {
     const archive = resolve(directory, asset.replace(/\.gz$/, ''));
     console.log(`Building signed gateway ${version} for linux/${architecture}`);
     run(['docker', 'build', '--platform', `linux/${architecture}`, '--build-arg', `GATEWAY_VERSION=${version}`, '--build-arg', `GATEWAY_REVISION=${revision}`, '-f', 'integration/Dockerfile', '-t', image, '.'], 'Gateway image build');
-    const imageId = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image], 'Inspect release image');
     run(['docker', 'image', 'save', '--output', archive, image], 'Export release image');
+    const imageId = await archiveConfigDigest(archive);
     await pipeline(createReadStream(archive), createGzip({ level: 6 }), createWriteStream(resolve(directory, asset)));
     rmSync(archive);
     const digest = createHash('sha256');

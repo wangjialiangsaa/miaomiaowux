@@ -48,10 +48,11 @@ export async function createUpdateManager({ source, runner, stateDirectory }) {
       state.job.baseline = await runner.preflight(release, state.job.previous); persist();
       phase('download'); await runner.download(state.job, release);
       phase('backup'); await runner.backup(state.job);
-      phase('load'); await runner.load(state.job, release);
-      phase('deploy'); await runner.deploy(release.manifest.selected.imageId);
+      phase('load'); const image = await runner.load(state.job, release);
+      if (typeof image !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(image)) throw new Error('Verified immutable host image is required');
+      phase('deploy'); await runner.deploy(image);
       phase('health'); await runner.healthy({ version: release.manifest.version, revision: release.manifest.revision }, state.job.baseline);
-      state.current = { version: release.manifest.version, revision: release.manifest.revision, image: release.manifest.selected.imageId };
+      state.current = { version: release.manifest.version, revision: release.manifest.revision, image };
       finish('succeeded');
     } catch {
       if (changedPhases.has(state.job.phase)) await restore();

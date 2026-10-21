@@ -6,6 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { downloadBundle, exactKeys, repository, UpdateError } from './release.mjs';
 import { privateJson } from './manager.mjs';
+import { archiveConfigDigest } from './image.mjs';
 
 const dockerEnvironment = { PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', HOME: '/tmp', DOCKER_HOST: 'unix:///var/run/docker.sock', DOCKER_CONFIG: '/tmp/docker-config', LANG: 'C' };
 function loopbackUrl(value) {
@@ -142,7 +143,16 @@ export function createDockerRunner(configuration) {
       const selected = candidate.manifest.selected;
       const image = JSON.parse(await docker(['image', 'inspect', '--format', '{{json .}}', selected.image], 15000));
       const labels = image.Config?.Labels || {};
-      if (image.Id !== selected.imageId || image.Architecture !== config.architecture || labels['org.opencontainers.image.version'] !== candidate.manifest.version || labels['org.opencontainers.image.revision'] !== candidate.manifest.revision || labels['org.opencontainers.image.source'] !== `https://github.com/${repository}`) throw new Error('Loaded image identity or release labels mismatch');
+      if (!/^sha256:[a-f0-9]{64}$/.test(image.Id) || image.Architecture !== config.architecture || labels['org.opencontainers.image.version'] !== candidate.manifest.version || labels['org.opencontainers.image.revision'] !== candidate.manifest.revision || labels['org.opencontainers.image.source'] !== `https://github.com/${repository}`) throw new Error('Loaded image identity or release labels mismatch');
+      if (image.Id !== selected.imageId) {
+        const exported = join(jobDirectory(job), 'loaded-image.tar');
+        try {
+          await docker(['image', 'save', '--output', exported, image.Id], 180000);
+          chmodSync(exported, 0o600);
+          if (await archiveConfigDigest(exported) !== selected.imageId) throw new Error('Loaded image configuration differs from the signed release');
+        } finally { rmSync(exported, { force: true }); }
+      }
+      return image.Id;
     },
     deploy, healthy,
     async restore(job) { await deploy(job.previous.image); await healthy(job.previous, job.baseline); },

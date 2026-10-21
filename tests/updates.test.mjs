@@ -34,7 +34,7 @@ function fixture(context, overrides = {}) {
     preflight: async () => { calls.push('preflight'); return { engines: ['engine-one'] }; },
     download: async () => { calls.push('download'); },
     backup: async () => { calls.push('backup'); },
-    load: async () => { calls.push('load'); },
+    load: async () => { calls.push('load'); return manifest().images.amd64.imageId; },
     deploy: async image => { calls.push('deploy:' + image); },
     healthy: async () => { calls.push('health'); },
     restore: async () => { calls.push('restore'); },
@@ -145,6 +145,16 @@ test('confirmation is exact, no commands or URLs accepted, duplicate jobs confli
   await assert.rejects(manager.check(), /正在/);
   while (!releaseDownload) await new Promise(resolve => setTimeout(resolve, 5));
   releaseDownload(); await settle(manager);
+});
+
+test('deployment pins the verified host image identity after portable configuration verification', async context => {
+  const hostImage = 'sha256:' + '9'.repeat(64);
+  const setup = fixture(context, { load: async () => hostImage });
+  const manager = await createUpdateManager({ source: setup.source, runner: setup.runner, stateDirectory: setup.directory });
+  await manager.check(); await manager.apply(confirmation());
+  assert.equal((await settle(manager)).job.phase, 'succeeded');
+  assert.ok(setup.calls.includes('deploy:' + hostImage));
+  assert.equal(JSON.parse(readFileSync(join(setup.directory, 'state.json'))).current.image, hostImage);
 });
 
 test('health/deployment failure rolls back without overwriting business databases', async context => {

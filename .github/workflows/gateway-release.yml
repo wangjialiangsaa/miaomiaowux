@@ -17,7 +17,7 @@ jobs:
           persist-credentials: false
       - name: Test integration and restricted updater
         run: |
-          docker run --rm -v "$PWD:/source:ro" -w /source node:24-alpine node --test tests/integration.test.mjs tests/traffic.test.mjs tests/updates.test.mjs tests/release-gateway.test.mjs
+          docker run --rm -v "$PWD:/source:ro" -w /source node:24-alpine node --test tests/integration.test.mjs tests/traffic.test.mjs tests/updates.test.mjs tests/release-gateway.test.mjs tests/image-identity.test.mjs
           node scripts/build.mjs --check
           bash -n install.sh upgrade-agent.sh
           python3 -m unittest discover -s tests -p 'test_*.py'
