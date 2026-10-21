@@ -1,0 +1,19 @@
+services:
+  updater:
+    image: ${UPDATER_IMAGE:?Build and select the trusted updater image}
+    restart: unless-stopped
+    network_mode: host
+    user: "0:${GATEWAY_GID:-10001}"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [DAC_READ_SEARCH]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 384m
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${UPDATER_CONTROL_DIR:?Set root-owned control directory}:/control:ro
+      - ${UPDATER_STATE_DIR:?Set private state directory}:/state
+      - ${UPDATER_SOCKET_DIR:?Set restricted socket directory}:/run/mmwx-updater
+      - ${MMWX_DATA_DIR:?Set existing MMWX data directory}:/data/mmwx:ro
+      - ${NODECTL_DATA_DIR:?Set existing NodeCTL data directory}:/data/nodectl:ro

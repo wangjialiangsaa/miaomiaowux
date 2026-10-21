@@ -5,10 +5,11 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { authenticate, checkMutation } from './auth.mjs';
 import { NodeCtlClient, exportEntries, signNodeCtlToken, validateChanges } from './nodectl.mjs';
 import { HttpError, requestJson, upstreamUrl } from './upstream.mjs';
+import { updateRequest } from './updates.mjs';
 
 const prefix = '/_nodectl';
 const publicAgentPaths = new Set(['/api/public/new-install-script', '/api/public/download/agent', '/api/agent/init-config', '/api/callback/traffic/ws']);
-const assets = new Map(['extension.mjs', 'native-import.mjs', 'traffic.mjs', 'style.css'].map(name => [name, {
+const assets = new Map(['extension.mjs', 'native-import.mjs', 'traffic.mjs', 'updates.mjs', 'style.css'].map(name => [name, {
   body: readFileSync(new URL(`../ui/nodectl/${name}`, import.meta.url)), type: name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
 }]));
 const injection = '<link rel="stylesheet" href="/_nodectl/assets/style.css"><script type="module" data-mmwx-nodectl src="/_nodectl/assets/extension.mjs"></script>';
@@ -132,7 +133,7 @@ export function createGateway(options) {
     try {
       if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('\\')) throw new HttpError(400, '无效的请求路径');
       const path = new URL(request.url, config.publicOrigin).pathname;
-      if (path === `${prefix}/health` && request.method === 'GET') return sendJson(response, 200, { ok: true });
+      if (path === `${prefix}/health` && request.method === 'GET') return sendJson(response, 200, { ok: true, version: config.buildVersion || '0.0.0', revision: config.buildRevision || 'development' });
       if (path.startsWith(`${prefix}/assets/`) && ['GET', 'HEAD'].includes(request.method)) {
         const asset = assets.get(path.slice(`${prefix}/assets/`.length));
         if (!asset) throw new HttpError(404, '资源不存在');
@@ -145,6 +146,8 @@ export function createGateway(options) {
       if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)) throw new HttpError(405, '不支持的管理方法');
       if (request.method !== 'GET') checkMutation(request, config);
       if (path === `${prefix}/api/session` && request.method === 'GET') return sendJson(response, 200, { username: session.username, role: session.role });
+      const update = path.match(/^\/_nodectl\/api\/updates\/(status|check|apply)$/);
+      if (update && request.method === (update[1] === 'status' ? 'GET' : 'POST')) return sendJson(response, update[1] === 'apply' ? 202 : 200, await updateRequest(config.updaterSocket, update[1], update[1] === 'status' ? undefined : await readJson(request)));
       if (path === `${prefix}/api/traffic` && request.method === 'GET') return sendJson(response, 200, await client.traffic(new URL(request.url, config.publicOrigin).searchParams.get('date')));
       if (path === `${prefix}/api/mmwx-nodes` && request.method === 'GET') {
         const result = await requestJson(config.mmwxUrl, '/api/admin/nodes', { headers: { 'MM-Authorization': session.token }, timeoutMs: config.timeoutMs });

@@ -8,6 +8,9 @@ try {
     mmwxUrl: process.env.MMWX_URL || 'http://127.0.0.1:12890',
     nodectlUrl: process.env.NODECTL_URL || 'http://127.0.0.1:7878',
     publicOrigin: process.env.PUBLIC_ORIGIN,
+    updaterSocket: process.env.UPDATER_SOCKET,
+    buildVersion: process.env.GATEWAY_VERSION,
+    buildRevision: process.env.GATEWAY_REVISION,
     credentials: () => readNodeCtlCredentials(process.env.NODECTL_DB || '/data/nodectl/nodectl.db'),
   });
   server.listen(port, process.env.HOST || '127.0.0.1', () => console.log(JSON.stringify({ event: 'unified_gateway_ready', port })));

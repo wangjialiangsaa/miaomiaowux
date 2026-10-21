@@ -1,0 +1,13 @@
+{
+  "project": "mmwx-unified-existing",
+  "gatewayService": "gateway",
+  "gatewayUrl": "http://127.0.0.1:12900",
+  "engineContainers": ["miaomiaowux-jp", "nodectl"],
+  "engineUrls": ["http://127.0.0.1:12890/login", "http://127.0.0.1:7878/"],
+  "architecture": "amd64",
+  "databases": [
+    { "source": "/data/mmwx/mmwx.db", "name": "mmwx.db" },
+    { "source": "/data/nodectl/nodectl.db", "name": "nodectl.db" }
+  ],
+  "keyFiles": [{ "source": "/data/mmwx/mmwx_master.key", "name": "mmwx_master.key" }]
+}

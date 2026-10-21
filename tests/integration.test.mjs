@@ -104,6 +104,40 @@ after(async () => {
 const headers = extra => ({ cookie: adminCookie, ...extra });
 const mutationHeaders = () => headers({ origin: publicOrigin, 'x-mmwx-nodectl': '1', 'content-type': 'application/json' });
 
+test('online update routes require native administrator and exact mutation protections', async context => {
+  const directory = mkdtempSync(join(tmpdir(), 'gateway-updater-'));
+  const socketPath = join(directory, 'updater.sock');
+  const actions = [];
+  const updater = createServer(async (request, response) => {
+    let body = ''; for await (const chunk of request) body += chunk;
+    actions.push({ path: request.url, method: request.method, body: body ? JSON.parse(body) : null });
+    json(response, request.url === '/v1/apply' ? 202 : 200, { enabled: true, current: { version: '1.0.0' }, latest: { version: '1.0.1' }, busy: request.url === '/v1/apply' });
+  });
+  await new Promise(resolve => updater.listen(socketPath, resolve));
+  const updated = createGateway({ mmwxUrl: `http://127.0.0.1:${mmwx.address().port}`, nodectlUrl: `http://127.0.0.1:${nodectl.address().port}`, publicOrigin, updaterSocket: socketPath, buildVersion: '1.0.0', buildRevision: 'a'.repeat(40) });
+  const address = await listen(updated);
+  context.after(async () => { for (const server of [updated, updater]) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } rmSync(directory, { recursive: true, force: true }); });
+  const url = address + '/_nodectl/api/updates/';
+  assert.equal((await fetch(url + 'status')).status, 401);
+  assert.equal((await fetch(url + 'status', { headers: { cookie: 'traffic_info_access_token="test-user-session"' } })).status, 403);
+  assert.equal((await fetch(url + 'apply', { method: 'POST', headers: headers({ 'content-type': 'application/json' }), body: '{}' })).status, 403);
+  assert.equal((await fetch(url + 'check', { method: 'POST', headers: mutationHeaders(), body: '{"url":"https://other.example"}' })).status, 400);
+  assert.deepEqual(actions, []);
+  const status = await fetch(url + 'status', { headers: headers() });
+  assert.equal(status.status, 200); assert.equal((await status.json()).enabled, true);
+  assert.equal((await fetch(url + 'check', { method: 'POST', headers: mutationHeaders(), body: '{}' })).status, 200);
+  assert.equal((await fetch(url + 'apply', { method: 'POST', headers: mutationHeaders(), body: JSON.stringify({ version: '1.0.1', manifestSha256: 'b'.repeat(64) }) })).status, 202);
+  assert.deepEqual(actions.map(action => action.path), ['/v1/status', '/v1/check', '/v1/apply']);
+  const health = await (await fetch(address + '/_nodectl/health')).json();
+  assert.equal(health.version, '1.0.0'); assert.equal(health.revision, 'a'.repeat(40));
+});
+
+test('unconfigured updater is explicitly disabled without affecting management', async () => {
+  const response = await fetch(base + '/_nodectl/api/updates/status', { headers: headers() });
+  assert.equal(response.status, 200); assert.equal((await response.json()).enabled, false);
+  assert.equal((await fetch(base + '/_nodectl/api/session', { headers: headers() })).status, 200);
+});
+
 test('expose validated read-only daily traffic without upstream secrets', async () => {
   const response = await fetch(base + '/_nodectl/api/traffic?date=2026-10-20', { headers: headers() });
   assert.equal(response.status, 200);

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import { createServer } from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createGateway } from '../integration/server.mjs';
 
 export async function startFixtures() {
@@ -73,12 +76,32 @@ export async function startFixtures() {
     socket.on('data', chunk => { if ((chunk[0] & 15) === 8) socket.end(Buffer.from([136, 0])); });
   });
   const nodectlUrl = await listen(nodectl);
+  const updateDirectory = mkdtempSync(join(tmpdir(), 'browser-updater-'));
+  const updaterSocket = join(updateDirectory, 'updater.sock');
+  state.updateReads = 0; state.updateChecks = 0; state.updateApplies = []; state.updateUnavailable = false;
+  state.updates = { enabled: true, current: { version: '1.0.0', revision: 'a'.repeat(40) }, latest: null, available: false, busy: false, blocked: false, job: null };
+  const updater = createServer(async (request, response) => {
+    if (state.updateUnavailable) return json(response, 503, { error: '更新器暂时无法连接' });
+    if (request.url === '/v1/status') state.updateReads += 1;
+    if (request.url === '/v1/check') {
+      assert.deepEqual(await body(request), {}); state.updateChecks += 1;
+      state.updates.latest = { version: '1.0.1', revision: 'b'.repeat(40), notes: '<img src=x onerror="window.updateXss=true"> Signed release notes', manifestSha256: 'c'.repeat(64) };
+      state.updates.available = true; state.updates.checkedAt = new Date().toISOString();
+    }
+    if (request.url === '/v1/apply') {
+      const input = await body(request);
+      assert.deepEqual(input, { version: '1.0.1', manifestSha256: 'c'.repeat(64) }); state.updateApplies.push(input);
+      state.updates.busy = true; state.updates.job = { id: 'fixture-job', phase: 'download', version: '1.0.1' };
+    }
+    return json(response, request.url === '/v1/apply' ? 202 : 200, state.updates);
+  });
+  await new Promise(resolve => updater.listen(updaterSocket, resolve));
   const gateway = createGateway({ mmwxUrl, nodectlUrl, publicOrigin: 'http://127.0.0.1', credentials: () => ({ username: 'fixture-node-admin', secret, panelUrl: 'https://agent.example.test' }) });
   const base = await listen(gateway);
   gateway.closeAllConnections();
   await new Promise(resolve => gateway.close(resolve));
   const origin = new URL(base);
-  const actualGateway = createGateway({ mmwxUrl, nodectlUrl, publicOrigin: origin.origin, credentials: () => ({ username: 'fixture-node-admin', secret, panelUrl: 'https://agent.example.test' }) });
+  const actualGateway = createGateway({ mmwxUrl, nodectlUrl, publicOrigin: origin.origin, updaterSocket, credentials: () => ({ username: 'fixture-node-admin', secret, panelUrl: 'https://agent.example.test' }) });
   await new Promise(resolve => actualGateway.listen(Number(origin.port), '127.0.0.1', resolve));
-  return { base, state, close: async () => { for (const socket of liveSockets) socket.destroy(); for (const server of [actualGateway, native, nodectl]) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } } };
+  return { base, state, close: async () => { for (const socket of liveSockets) socket.destroy(); for (const server of [actualGateway, native, nodectl, updater]) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } rmSync(updateDirectory, { recursive: true, force: true }); } };
 }

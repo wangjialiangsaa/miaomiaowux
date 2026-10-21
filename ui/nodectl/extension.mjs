@@ -1,9 +1,10 @@
 import { importMissingNodes } from './native-import.mjs';
 import { createTrafficPanel, DISPLAY_INTERVAL_MS, trafficSnapshot } from './traffic.mjs';
+import { createUpdateDialog } from './updates.mjs';
 
 const prefix = '/_nodectl';
 const projectRepository = 'https://github.com/wangjialiangsaa/miaomiaowux';
-const state = { authenticated: false, root: null, main: null, entries: new Map(), nodes: [], loading: false, cookie: null, checking: false, traffic: null, nodeMarkup: null, openProtocols: new Set() };
+const state = { authenticated: false, root: null, main: null, entries: new Map(), nodes: [], loading: false, cookie: null, checking: false, traffic: null, nodeMarkup: null, openProtocols: new Set(), updates: null };
 
 function element(tag, attributes = {}, text) {
   const result = document.createElement(tag);
@@ -71,6 +72,7 @@ async function api(path, options = {}) {
 }
 
 function closeWorkspace() {
+  state.updates?.close();
   stopTraffic();
   state.main?.classList.remove('nodectl-workspace-active');
   state.root?.remove();
@@ -279,7 +281,7 @@ function mountWorkspace() {
     const header = element('header', { className: 'nodectl-header' });
     const title = element('div'); title.append(element('p', { className: 'nodectl-eyebrow' }, '服务器与 Agent'), element('h1', {}, 'NodeCTL 统一管理'), element('p', { className: 'nodectl-muted', 'data-nodectl-count': '' }));
     const actions = element('div', { className: 'nodectl-actions' });
-    actions.append(button('返回原页面', () => { history.replaceState(null, '', location.pathname + location.search); closeWorkspace(); }), button('刷新', refresh), button('导出节点链接', async () => showText('已启用节点链接', (await api('/export')).entries.map(entry => entry.url).join('\n'))), button('导入到妙妙屋X', importNodes), button('添加服务器', () => edit(), 'nodectl-primary'), projectLink('nodectl-button'));
+    actions.append(button('返回原页面', () => { history.replaceState(null, '', location.pathname + location.search); closeWorkspace(); }), button('刷新', refresh), button('导出节点链接', async () => showText('已启用节点链接', (await api('/export')).entries.map(entry => entry.url).join('\n'))), button('导入到妙妙屋X', importNodes), button('添加服务器', () => edit(), 'nodectl-primary'), button('系统更新', () => { if (!state.updates) state.updates = createUpdateDialog({ api, element, onClose: () => { state.updates = null; } }); }), projectLink('nodectl-button'));
     header.append(title, actions);
     const panel = createTrafficPanel(loadTrafficDate);
     state.traffic = { panel, samples: new Map(), date: null, rank: null, loading: false, error: false, request: null, timer: null, reconnect: null, socket: null, retry: 1000 };

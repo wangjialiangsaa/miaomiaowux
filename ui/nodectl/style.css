@@ -33,6 +33,15 @@ main.nodectl-workspace-active > :not(#mmwx-nodectl-root), [role="main"].nodectl-
 .nodectl-empty { padding: 30px 0; color: var(--muted-foreground, #657184); }
 .nodectl-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; padding: 24px; border: 1px solid var(--border, #d9dee5); border-radius: 10px; background: var(--background, #fff); }
 .nodectl-dialog::backdrop { background: rgb(0 0 0 / .45); }
+.nodectl-update [hidden] { display: none !important; }
+.nodectl-update h3 { font-size: .9rem; margin: 20px 0 8px; }
+.nodectl-update-versions { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 22px; padding: 16px 0; font-size: .85rem; border-block: 1px solid var(--border, #d9dee5); }
+.nodectl-update-versions dt { color: var(--muted-foreground, #657184); }
+.nodectl-update-versions dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.nodectl-update-status { font-size: .85rem; line-height: 1.65; }
+.nodectl-update-status[data-error="true"] { color: var(--destructive, #ae3030); }
+.nodectl-update progress { width: 100%; accent-color: var(--primary, #244b56); }
+.nodectl-update-notes { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .82rem; line-height: 1.7; padding: 12px; border-radius: 6px; background: var(--muted, #f1f4f7); }
 .nodectl-dialog h2 { font-size: 1.2rem; font-weight: 600; margin: 0 0 20px; }
 .nodectl-dialog > .nodectl-actions { justify-content: end; margin-top: 18px; }
 .nodectl-form { display: grid; gap: 14px; }

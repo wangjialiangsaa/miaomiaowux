@@ -1,0 +1,30 @@
+services:
+  gateway:
+    image: ${GATEWAY_IMAGE:?Set a verified immutable gateway image}
+    restart: unless-stopped
+    network_mode: host
+    user: "${GATEWAY_UID:-10001}:${GATEWAY_GID:-10001}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    environment:
+      HOST: 127.0.0.1
+      PORT: ${PORT:-12900}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the public HTTPS origin}
+      MMWX_URL: ${MMWX_URL:-http://127.0.0.1:12890}
+      NODECTL_URL: ${NODECTL_URL:-http://127.0.0.1:7878}
+      NODECTL_DB: /data/nodectl/nodectl.db
+      UPDATER_SOCKET: /run/mmwx-updater/updater.sock
+    volumes:
+      - type: bind
+        source: ${NODECTL_DATA_DIR:?Set the existing NodeCTL data directory}
+        target: /data/nodectl
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${UPDATER_SOCKET_DIR:?Set the restricted socket directory}
+        target: /run/mmwx-updater
+        read_only: true
+        bind: { create_host_path: false }

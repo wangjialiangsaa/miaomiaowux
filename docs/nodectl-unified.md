@@ -111,3 +111,6 @@ python3 -m unittest discover -s tests -v
 - Chromium fixture 的 25 项浏览器检查通过，覆盖登录、侧栏、桌面 / 手机顶部导航、节点操作、增量导入、流量汇总、半秒实时显示、稳定 DOM、真实按日查询、隐藏页面暂停、注销关闭连接及本地 SVG 国旗；不展示不受上游支持的备注编辑。
 - 两个 Compose 文件均通过 Compose v5.6.0 配置校验；生成文件一致性、Shell / JavaScript 语法和 Git 空白检查通过。
 - 本地环境没有 Python 与 Docker 引擎，原 Python 安装器测试未运行。镜像构建和线上入口须在实际部署环境另行验收，不能用 fixture 结果替代；这些测试不执行真实 Agent 安装、协议调整或节点写入。
+# 后台在线更新
+
+管理员可在 NodeCTL 服务器页点击“系统更新”，直接检查并安装已签名的网关发布；不自动更改原节点、订阅、MMWX/NodeCTL 引擎或 Agent。需单独启用受限更新器，详见 [在线更新与回退](online-updates.md)。未启用时其余管理功能不受影响。

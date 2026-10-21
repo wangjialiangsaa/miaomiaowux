@@ -1,0 +1,33 @@
+name: Signed gateway release
+on:
+  push:
+    tags: ['gateway-v*']
+permissions:
+  contents: write
+concurrency:
+  group: gateway-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Test integration and restricted updater
+        run: |
+          docker run --rm -v "$PWD:/source:ro" -w /source node:24-alpine node --test tests/integration.test.mjs tests/traffic.test.mjs tests/updates.test.mjs tests/release-gateway.test.mjs
+          node scripts/build.mjs --check
+          bash -n install.sh upgrade-agent.sh
+          python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Build and sign public image bundles
+        env:
+          GATEWAY_RELEASE_SIGNING_KEY: ${{ secrets.GATEWAY_RELEASE_SIGNING_KEY }}
+        run: node scripts/release-gateway.mjs "$GITHUB_REF_NAME" _release
+      - name: Publish verified gateway release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s\n' '管理员后台在线更新整合网关与管理界面。' '包含发布签名和镜像校验、自动备份、健康检查和失败回退。' '不会升级或重置 MMWX、NodeCTL 引擎、Agent、原有节点、账号或订阅。' > _release-notes.md
+          gh release create "$GITHUB_REF_NAME" _release/* --verify-tag --latest=false --title "Gateway ${GITHUB_REF_NAME#gateway-v}" --notes-file _release-notes.md
