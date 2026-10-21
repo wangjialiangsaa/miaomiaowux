@@ -2,7 +2,8 @@ import { importMissingNodes } from './native-import.mjs';
 import { createTrafficPanel, DISPLAY_INTERVAL_MS, trafficSnapshot } from './traffic.mjs';
 
 const prefix = '/_nodectl';
-const state = { authenticated: false, root: null, main: null, entries: new Map(), nodes: [], loading: false, cookie: null, checking: false, traffic: null, nodeMarkup: null };
+const projectRepository = 'https://github.com/wangjialiangsaa/miaomiaowux';
+const state = { authenticated: false, root: null, main: null, entries: new Map(), nodes: [], loading: false, cookie: null, checking: false, traffic: null, nodeMarkup: null, openProtocols: new Set() };
 
 function element(tag, attributes = {}, text) {
   const result = document.createElement(tag);
@@ -12,6 +13,24 @@ function element(tag, attributes = {}, text) {
   }
   if (text !== undefined) result.textContent = text;
   return result;
+}
+
+function projectLink(className = '') {
+  return element('a', { href: projectRepository, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'GitHub 项目仓库', 'data-mmwx-project-repository': '', className }, 'GitHub');
+}
+
+function mountProjectLinks() {
+  for (const link of document.querySelectorAll('a[href]')) {
+    const original = link.href;
+    if (!/^https?:\/\/github\.com\/zako-li\/miaomiaowux\/?(?:[?#].*)?$/i.test(original)) continue;
+    if (!link.childElementCount && link.textContent.trim().replace(/\/$/, '') === original.replace(/\/$/, '')) link.textContent = projectRepository;
+    link.href = projectRepository;
+  }
+  if (location.pathname.replace(/\/$/, '') !== '/login') return;
+  const form = document.querySelector('form');
+  if (!form || form.parentElement.querySelector('[data-mmwx-project-repository]')) return;
+  const footer = element('p', { className: 'mmwx-project-footer' });
+  footer.append(projectLink()); form.after(footer);
 }
 
 function button(text, handler, className = '') {
@@ -34,6 +53,7 @@ function revoke() {
   state.authenticated = false;
   for (const entry of state.entries.values()) entry.remove();
   state.entries.clear();
+  state.openProtocols.clear();
   closeWorkspace();
   state.root = null; state.nodes = []; state.traffic = null; state.nodeMarkup = null;
 }
@@ -203,15 +223,24 @@ function renderNodes() {
       await api(`/nodes/${encodeURIComponent(node.uuid)}`, { method: 'DELETE', body: {} }); await refresh();
     }, 'nodectl-danger'));
     card.append(controls);
-    const protocols = element('div', { className: 'nodectl-protocols' });
-    for (const name of Object.keys(node.links || {})) {
+    const names = Object.keys(node.links || {});
+    const protocols = element('details', { className: 'nodectl-protocols' });
+    const summary = element('summary', { className: 'nodectl-protocols-toggle' }, '协议管理');
+    summary.append(element('span', { className: 'nodectl-muted nodectl-protocol-count' }, `${names.length} 项`));
+    protocols.append(summary); protocols.open = state.openProtocols.has(node.uuid);
+    protocols.addEventListener('toggle', () => {
+      if (!protocols.isConnected) return;
+      if (protocols.open) state.openProtocols.add(node.uuid);
+      else state.openProtocols.delete(node.uuid);
+    });
+    for (const name of names) {
       const disabled = (node.disabled_links || []).includes(name);
       const row = element('div', { className: 'nodectl-protocol' });
       row.append(element('span', {}, name), element('span', { className: 'nodectl-muted' }, disabled ? '停用' : '启用'));
       row.append(button(disabled ? '启用' : '停用', () => protocol(node, name, disabled ? 'enable' : 'disable')), button('重置', () => protocol(node, name, 'reset')));
       protocols.append(row);
     }
-    if (!protocols.childElementCount) protocols.append(element('p', { className: 'nodectl-muted' }, '等待 Agent 上报协议'));
+    if (!names.length) protocols.append(element('p', { className: 'nodectl-muted' }, '等待 Agent 上报协议'));
     card.append(protocols); grid.append(card);
   }
 }
@@ -250,7 +279,7 @@ function mountWorkspace() {
     const header = element('header', { className: 'nodectl-header' });
     const title = element('div'); title.append(element('p', { className: 'nodectl-eyebrow' }, '服务器与 Agent'), element('h1', {}, 'NodeCTL 统一管理'), element('p', { className: 'nodectl-muted', 'data-nodectl-count': '' }));
     const actions = element('div', { className: 'nodectl-actions' });
-    actions.append(button('返回原页面', () => { history.replaceState(null, '', location.pathname + location.search); closeWorkspace(); }), button('刷新', refresh), button('导出节点链接', async () => showText('已启用节点链接', (await api('/export')).entries.map(entry => entry.url).join('\n'))), button('导入到妙妙屋X', importNodes), button('添加服务器', () => edit(), 'nodectl-primary'));
+    actions.append(button('返回原页面', () => { history.replaceState(null, '', location.pathname + location.search); closeWorkspace(); }), button('刷新', refresh), button('导出节点链接', async () => showText('已启用节点链接', (await api('/export')).entries.map(entry => entry.url).join('\n'))), button('导入到妙妙屋X', importNodes), button('添加服务器', () => edit(), 'nodectl-primary'), projectLink('nodectl-button'));
     header.append(title, actions);
     const panel = createTrafficPanel(loadTrafficDate);
     state.traffic = { panel, samples: new Map(), date: null, rank: null, loading: false, error: false, request: null, timer: null, reconnect: null, socket: null, retry: 1000 };
@@ -309,7 +338,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') stopTraffic();
   else if (state.root?.isConnected) { startTraffic(); refresh().catch(error => notice(error.message, true)); }
 });
-new MutationObserver(mountEntry).observe(document.body, { childList: true, subtree: true });
+new MutationObserver(() => { mountProjectLinks(); mountEntry(); }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] });
 setInterval(() => { if (document.cookie !== state.cookie) checkSession(); }, 1000);
 setInterval(() => { if (state.root?.isConnected && document.visibilityState !== 'hidden' && !document.querySelector('dialog[open]')) refresh().catch(error => notice(error.message, true)); }, 15000);
-checkSession();
+mountProjectLinks(); checkSession();
